@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"sync"
 
 	ml "github.com/IBM/mathlib"
 	"golang.org/x/crypto/hkdf"
@@ -24,6 +25,30 @@ var (
 	// nolint:gochecknoglobals
 	generateKeySalt = "BBS-SIG-KEYGEN-SALT-"
 )
+
+type publicKeyGeneratorCache struct {
+	generators sync.Map
+}
+
+func newPublicKeyGeneratorCache() *publicKeyGeneratorCache {
+	return &publicKeyGeneratorCache{}
+}
+
+func (c *publicKeyGeneratorCache) get(data []byte, curve *ml.Curve) *ml.G1 {
+	if c == nil {
+		return hashToG1(data, curve)
+	}
+
+	key := string(data)
+	if cached, ok := c.generators.Load(key); ok {
+		return cached.(*ml.G1)
+	}
+
+	generator := hashToG1(data, curve)
+	cached, _ := c.generators.LoadOrStore(key, generator)
+
+	return cached.(*ml.G1)
+}
 
 // PublicKey defines BLS Public Key.
 type PublicKey struct {
@@ -50,11 +75,21 @@ type PublicKeyWithGenerators struct {
 
 // ToPublicKeyWithGenerators creates PublicKeyWithGenerators from the PublicKey.
 func (pk *PublicKey) ToPublicKeyWithGenerators(messagesCount int) (*PublicKeyWithGenerators, error) {
+	return pk.toPublicKeyWithGenerators(messagesCount, nil)
+}
+
+// ToPublicKeyWithGenerators creates PublicKeyWithGenerators using the cache owned by BBSLib.
+func (b *BBSLib) ToPublicKeyWithGenerators(pubKey *PublicKey, messagesCount int) (*PublicKeyWithGenerators, error) {
+	return pubKey.toPublicKeyWithGenerators(messagesCount, b.publicKeyGenerators)
+}
+
+func (pk *PublicKey) toPublicKeyWithGenerators(messagesCount int,
+	cache *publicKeyGeneratorCache) (*PublicKeyWithGenerators, error) {
 	offset := pk.curve.G2ByteSize + 1
 
 	data := calcData(pk, messagesCount)
 
-	h0 := hashToG1(data, pk.curve)
+	h0 := cache.get(data, pk.curve)
 
 	h := make([]*ml.G1, messagesCount)
 
@@ -68,7 +103,7 @@ func (pk *PublicKey) ToPublicKeyWithGenerators(messagesCount int) (*PublicKeyWit
 			dataCopy[j+offset] = iBytes[j]
 		}
 
-		h[i-1] = hashToG1(dataCopy, pk.curve)
+		h[i-1] = cache.get(dataCopy, pk.curve)
 	}
 
 	return &PublicKeyWithGenerators{

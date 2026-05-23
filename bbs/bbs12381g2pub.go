@@ -23,6 +23,7 @@ type BBSLib struct {
 	g1UncompressedSize     int
 	g2UncompressedSize     int
 	frUncompressedSize     int
+	publicKeyGenerators    *publicKeyGeneratorCache
 }
 
 func NewBBSLib(curve *ml.Curve) *BBSLib {
@@ -46,6 +47,8 @@ func NewBBSLib(curve *ml.Curve) *BBSLib {
 
 		// Number of bytes in scalar uncompressed form.
 		frUncompressedSize: curve.ScalarByteSize,
+
+		publicKeyGenerators: newPublicKeyGeneratorCache(),
 	}
 }
 
@@ -81,7 +84,7 @@ func (bbs *BBSG2Pub) Verify(messages [][]byte, sigBytes, pubKeyBytes []byte) err
 
 	messagesCount := len(messages)
 
-	publicKeyWithGenerators, err := pubKey.ToPublicKeyWithGenerators(messagesCount)
+	publicKeyWithGenerators, err := bbs.lib.ToPublicKeyWithGenerators(pubKey, messagesCount)
 	if err != nil {
 		return fmt.Errorf("build generators from public key: %w", err)
 	}
@@ -131,7 +134,7 @@ func (bbs *BBSG2Pub) VerifyProofFr(messages []*SignatureMessage, proof, nonce, p
 		return fmt.Errorf("parse public key: %w", err)
 	}
 
-	publicKeyWithGenerators, err := pubKey.ToPublicKeyWithGenerators(payload.MessagesCount)
+	publicKeyWithGenerators, err := bbs.lib.ToPublicKeyWithGenerators(pubKey, payload.MessagesCount)
 	if err != nil {
 		return fmt.Errorf("build generators from public key: %w", err)
 	}
@@ -179,7 +182,7 @@ func (bbs *BBSG2Pub) DeriveProofZr(messagesFr []*SignatureMessage, sigBytes, non
 		return nil, fmt.Errorf("parse public key: %w", err)
 	}
 
-	publicKeyWithGenerators, err := pubKey.ToPublicKeyWithGenerators(messagesCount)
+	publicKeyWithGenerators, err := bbs.lib.ToPublicKeyWithGenerators(pubKey, messagesCount)
 	if err != nil {
 		return nil, fmt.Errorf("build generators from public key: %w", err)
 	}
@@ -233,7 +236,7 @@ func (bbs *BBSG2Pub) SignWithKeyFr(messagesFr []*SignatureMessage, messagesCount
 
 	pubKey := privKey.PublicKey()
 
-	pubKeyWithGenerators, err := pubKey.ToPublicKeyWithGenerators(messagesCount)
+	pubKeyWithGenerators, err := bbs.lib.ToPublicKeyWithGenerators(pubKey, messagesCount)
 	if err != nil {
 		return nil, fmt.Errorf("build generators from public key: %w", err)
 	}
@@ -261,7 +264,7 @@ func (bbs *BBSG2Pub) SignWithKeyB(b *ml.G1, messagesCount int, privKey *PrivateK
 
 	pubKey := privKey.PublicKey()
 
-	pubKeyWithGenerators, err := pubKey.ToPublicKeyWithGenerators(messagesCount)
+	pubKeyWithGenerators, err := bbs.lib.ToPublicKeyWithGenerators(pubKey, messagesCount)
 	if err != nil {
 		return nil, fmt.Errorf("build generators from public key: %w", err)
 	}
@@ -330,11 +333,26 @@ func (cb *commitmentBuilder) Build() *ml.G1 {
 func sumOfG1Products(bases []*ml.G1, scalars []*ml.Zr) *ml.G1 {
 	var res *ml.G1
 
-	for i := 0; i < len(bases); i++ {
-		b := bases[i]
-		s := scalars[i]
+	i := 0
+	for ; i+1 < len(bases); i += 2 {
+		b1 := bases[i]
+		s1 := FrToRepr(scalars[i])
+		b2 := bases[i+1]
+		s2 := FrToRepr(scalars[i+1])
 
-		g := b.Mul(FrToRepr(s))
+		g := b1.Mul2(s1, b2, s2)
+		if res == nil {
+			res = g
+		} else {
+			res.Add(g)
+		}
+	}
+
+	if i < len(bases) {
+		b := bases[i]
+		s := FrToRepr(scalars[i])
+
+		g := b.Mul(s)
 		if res == nil {
 			res = g
 		} else {

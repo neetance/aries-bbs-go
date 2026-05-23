@@ -69,7 +69,10 @@ func ParsePoKPayload(bytes []byte) (*pokPayload, error) {
 		return nil, errors.New("invalid size of PoK payload")
 	}
 
-	revealed := bitvectorToIndexes(reverseBytes(bytes[2:offset]))
+	// Defensive copy: reverseBytes mutates in-place, which would corrupt the caller's proof bytes.
+	bitvector := make([]byte, offset-2)
+	copy(bitvector, bytes[2:offset])
+	revealed := bitvectorToIndexes(reverseBytes(bitvector))
 
 	return &pokPayload{
 		MessagesCount: messagesCount,

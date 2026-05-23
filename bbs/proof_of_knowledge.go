@@ -69,7 +69,7 @@ func (p *PoKOfSignatureProvider) PoKOfSignatureB(signature *Signature, messages 
 	pubKey *PublicKeyWithGenerators, b *ml.G1) (*PoKOfSignature, error) {
 
 	if p.VerifySig {
-		err := signature.Verify(messages, pubKey)
+		err := signature.VerifyWithB(messages, pubKey, b)
 		if err != nil {
 			return nil, fmt.Errorf("verify input signature: %w", err)
 		}

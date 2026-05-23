@@ -190,8 +190,13 @@ func (pg1 *ProofG1) Verify(bases []*ml.G1, commitment *ml.G1, challenge *ml.Zr) 
 
 func (pg1 *ProofG1) getChallengeContribution(bases []*ml.G1, commitment *ml.G1,
 	challenge *ml.Zr) *ml.G1 {
-	points := append(bases, commitment)
-	scalars := append(pg1.Responses, challenge)
+	points := make([]*ml.G1, len(bases)+1)
+	copy(points, bases)
+	points[len(bases)] = commitment
+
+	scalars := make([]*ml.Zr, len(pg1.Responses)+1)
+	copy(scalars, pg1.Responses)
+	scalars[len(pg1.Responses)] = challenge
 
 	return sumOfG1Products(points, scalars)
 }

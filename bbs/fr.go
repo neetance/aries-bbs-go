@@ -17,16 +17,22 @@ func (b *BBSLib) parseFr(data []byte) *ml.Zr {
 	return b.curve.NewZrFromBytes(data)
 }
 
-// nolint:gochecknoglobals
-var f2192Bytes = []byte{
-	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
-	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-	0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
-}
+var (
+	// nolint:gochecknoglobals
+	f2192Bytes = []byte{
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x1,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+		0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+	}
+	f2192Cached *ml.Zr
+)
 
 func f2192(curve *ml.Curve) *ml.Zr {
-	return curve.NewZrFromBytes(f2192Bytes)
+	if f2192Cached == nil {
+		f2192Cached = curve.NewZrFromBytes(f2192Bytes)
+	}
+	return f2192Cached
 }
 
 func FrFromOKM(message []byte, curve *ml.Curve) *ml.Zr {
@@ -41,19 +47,24 @@ func FrFromOKM(message []byte, curve *ml.Curve) *ml.Zr {
 	// blake2b.digest() does not return an error.
 	_, _ = h.Write(message)
 	okm := h.Sum(nil)
-	emptyEightBytes := make([]byte, eightBytes)
 
-	elm := curve.NewZrFromBytes(append(emptyEightBytes, okm[:okmMiddle]...))
+	buf := make([]byte, eightBytes+okmMiddle)
+	// buf has leading 8 zeros
+	copy(buf[eightBytes:], okm[:okmMiddle])
+
+	elm := curve.NewZrFromBytes(buf)
 	elm = elm.Mul(f2192(curve))
 
-	fr := curve.NewZrFromBytes(append(emptyEightBytes, okm[okmMiddle:]...))
+	buf2 := make([]byte, eightBytes+okmMiddle)
+	copy(buf2[eightBytes:], okm[okmMiddle:])
+	fr := curve.NewZrFromBytes(buf2)
 	elm = elm.Plus(fr)
 
 	return elm
 }
 
 func FrToRepr(fr *ml.Zr) *ml.Zr {
-	return fr.Copy()
+	return fr
 }
 
 func MessagesToFr(messages [][]byte, curve *ml.Curve) []*SignatureMessage {
